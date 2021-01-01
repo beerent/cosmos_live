@@ -26,19 +26,40 @@ class ConfigReader:
 			return None
 
 class DatabaseConnector:
+	host = None
+	database = None
+	user = None
+	password = None
+	db_connection = None
+
 	def __init__(self, host, database, user, password):
+		self.host = host
+		self.database = database
+		self.user = user
+		self.password = password
+
+	def open_connection(self):
 		self.db_connection = mysql.connector.connect(
-			host=host,
-			database = database,
-			user=user,
-			passwd=password
+			host = self.host,
+			database = self.database,
+			user = self.user,
+			passwd = self.password
 		)
 
+	def close_connection(self):
+		self.db_connection.close()
+
 	def get_admin_auth_key(self):
-		mycursor = self.db_connection.cursor()
-		mycursor.execute("select value from config where `key` = 'admin_auth_key'")
-		myresult = mycursor.fetchall()
-		return myresult[0][0]
+		self.open_connection()
+
+		cursor = self.db_connection.cursor()
+		cursor.execute("select value from config where `key` = 'admin_auth_key'")
+		result = cursor.fetchall()
+		cursor.close()
+
+		self.close_connection()
+
+		return result[0][0]
 
 class RestApiConnector:
 	admin_auth_key = None
@@ -70,7 +91,6 @@ def main(environment):
 	database_connector = get_database_connector(database_connection_data)
 
 	admin_auth_key = database_connector.get_admin_auth_key()
-	print (admin_auth_key)
 	rest_api_connector = RestApiConnector(admin_auth_key)
 
 
