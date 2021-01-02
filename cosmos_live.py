@@ -1,5 +1,6 @@
 import mysql.connector
 from pathlib import Path
+from datetime import datetime
 import requests
 import time
 import json
@@ -78,7 +79,49 @@ class RestApiConnector:
 		full_url = "%s/%s" % (self.api_url, "live")
 		response = requests.get(full_url, json)
 
-		return response
+		return response.json()
+
+class CosmosLiveSessionManager:
+	rest_api_connector = None
+	def __init__(self, rest_api_connector):
+		self.rest_api_connector = rest_api_connector
+
+	def run(self):
+		while True:
+			live_session = self.rest_api_connector.get_cosmos_live_session()
+			self.handle_live_session(live_session["payload"]["cosmos_live_session"])
+
+			time.sleep(1)
+
+	def handle_live_session(self, session):
+		session_state = session["state"]
+
+		if session_state == "CLOSED":
+			self.handle_closed_live_session(session)
+
+	def handle_closed_live_session(self, session):
+		start_date_time = self.get_date(session["start"])
+		now_date_time = self.get_date(datetime.utcnow())
+
+		print ("start: " + str(start_date_time))
+		print ("now:   " + str(now_date_time))
+		print ()
+
+		if (start_date_time > now_date_time):
+			return
+
+		print ("later!")
+
+	def clean_date(self, date):
+		return date.replace("T", " ")[:date.rindex(".")]
+
+	def get_date(self, date):
+		date = str(date)
+		str_date = self.clean_date(date)
+
+		datetime_object = datetime.strptime(str_date, '%Y-%m-%d %H:%M:%S')
+
+		return datetime_object
 
 
 def get_database_connection_info(environment):
@@ -113,12 +156,6 @@ def get_database_connector(database_connection_info):
 
 	return database_connector
 
-def run_cosmos_live(rest_api_connector):
-	while True:
-		session = rest_api_connector.get_cosmos_live_session()
-		print(session.json())
-		time.sleep(1)
-
 def main(environment):
 	database_connection_info = get_database_connection_info(environment)
 	database_connector = get_database_connector(database_connection_info)
@@ -128,12 +165,9 @@ def main(environment):
 
 	rest_api_connector = RestApiConnector(api_url, admin_auth_key)
 
-	run_cosmos_live(rest_api_connector)
+	cosmos_live_session_manager = CosmosLiveSessionManager(rest_api_connector)
+	cosmos_live_session_manager.run()
 
-
-
-
-	
 
 
 if __name__ == "__main__":
