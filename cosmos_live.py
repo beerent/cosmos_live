@@ -1,6 +1,6 @@
 import mysql.connector
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 import requests
 import time
 import json
@@ -67,6 +67,55 @@ class DatabaseConnector:
 
 		return result[0][0]
 
+	def get_live_mode_pre_game_lobby_length(self):
+		self.open_connection()
+
+		cursor = self.db_connection.cursor()
+		cursor.execute("select value from config where `key` = 'live_mode_pre_game_lobby_length'")
+		result = cursor.fetchall()
+		cursor.close()
+
+		self.close_connection()
+
+		return int(result[0][0])
+
+	def get_live_mode_post_game_lobby_length(self):
+		self.open_connection()
+
+		cursor = self.db_connection.cursor()
+		cursor.execute("select value from config where `key` = 'live_mode_post_game_lobby_length'")
+		result = cursor.fetchall()
+		cursor.close()
+
+		self.close_connection()
+
+		return result[0][0]
+
+	def get_live_mode_question_timer_length(self):
+		self.open_connection()
+
+		cursor = self.db_connection.cursor()
+		cursor.execute("select value from config where `key` = 'live_mode_question_timer_length'")
+		result = cursor.fetchall()
+		cursor.close()
+
+		self.close_connection()
+
+		return result[0][0]
+
+	def get_live_mode_round_timer_length(self):
+		self.open_connection()
+
+		cursor = self.db_connection.cursor()
+		cursor.execute("select value from config where `key` = 'live_mode_round_timer_length'")
+		result = cursor.fetchall()
+		cursor.close()
+
+		self.close_connection()
+
+		return result[0][0]
+
+
 class RestApiConnector:
 	admin_auth_key = None
 
@@ -81,9 +130,30 @@ class RestApiConnector:
 
 		return response.json()
 
+	def advance_live_session_to_closed(self):
+		print("transitioning session state to closed")
+		self.advance_live_session_state("closed")
+
+	def advance_live_session_to_pre_game_lobby(self):
+		print("transitioning session state to pre game lobby")
+		self.advance_live_session_state("pre_game_lobby")
+
+	def advance_live_session_to_in_game(self):
+		print("transitioning session state to in game")
+		self.advance_live_session_state("in_game")
+
+	def advance_live_session_state(self, state):
+		json = {"admin_auth_key" : self.admin_auth_key, "request" : "transition_state", "state" : state};
+		full_url = "%s/%s" % (self.api_url, "liveAdmin")
+		
+		requests.get(full_url, json)
+
 class CosmosLiveSessionManager:
+	database_connector = None
 	rest_api_connector = None
-	def __init__(self, rest_api_connector):
+
+	def __init__(self, database_connector, rest_api_connector):
+		self.database_connector = database_connector
 		self.rest_api_connector = rest_api_connector
 
 	def run(self):
@@ -93,24 +163,38 @@ class CosmosLiveSessionManager:
 
 			time.sleep(1)
 
+	def get_appropriate_state(self, session):
+		start_date_time = self.get_date(session["start"])
+		pre_game_lobby_date_time = self.get_pre_game_lobby_date_time(start_date_time)
+		now_date_time = self.get_date(datetime.utcnow())
+
+		if now_date_time < pre_game_lobby_date_time:
+			return "CLOSED"
+		elif now_date_time >= pre_game_lobby_date_time and now_date_time < start_date_time:
+			return "PRE_GAME_LOBBY"
+		elif now_date_time >= start_date_time:
+			return "IN_GAME"
+
+		return "CLOSED"
+
+	def get_pre_game_lobby_date_time(self, start_date_time):
+		pre_game_lobby_seconds = self.database_connector.get_live_mode_pre_game_lobby_length()
+		return start_date_time - timedelta(seconds = pre_game_lobby_seconds)
+
 	def handle_live_session(self, session):
 		session_state = session["state"]
 
-		if session_state == "CLOSED":
-			self.handle_closed_live_session(session)
-
-	def handle_closed_live_session(self, session):
-		start_date_time = self.get_date(session["start"])
-		now_date_time = self.get_date(datetime.utcnow())
-
-		print ("start: " + str(start_date_time))
-		print ("now:   " + str(now_date_time))
-		print ()
-
-		if (start_date_time > now_date_time):
+		destination_state = self.get_appropriate_state(session)
+		if destination_state == session_state:
 			return
 
-		print ("later!")
+		if destination_state == "CLOSED":
+			self.rest_api_connector.advance_live_session_to_closed()
+		elif destination_state == "PRE_GAME_LOBBY":
+			self.rest_api_connector.advance_live_session_to_pre_game_lobby()
+		elif destination_state == "IN_GAME":
+			self.rest_api_connector.advance_live_session_to_in_game()
+
 
 	def clean_date(self, date):
 		return date.replace("T", " ")[:date.rindex(".")]
@@ -165,7 +249,7 @@ def main(environment):
 
 	rest_api_connector = RestApiConnector(api_url, admin_auth_key)
 
-	cosmos_live_session_manager = CosmosLiveSessionManager(rest_api_connector)
+	cosmos_live_session_manager = CosmosLiveSessionManager(database_connector, rest_api_connector)
 	cosmos_live_session_manager.run()
 
 
