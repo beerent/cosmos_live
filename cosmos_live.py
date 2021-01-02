@@ -6,6 +6,10 @@ import time
 import json
 import sys
 
+def log(message):
+	ct = datetime.now()
+	print("[%s] %s" % (ct, message))
+
 class ConfigReader:
 	environment = None
 	config_json = None
@@ -131,19 +135,27 @@ class RestApiConnector:
 		return response.json()
 
 	def advance_live_session_to_closed(self):
-		print("transitioning session state to closed")
+		log("advance_live_session_to_closed()")
 		self.advance_live_session_state("closed")
 
 	def advance_live_session_to_pre_game_lobby(self):
-		print("transitioning session state to pre game lobby")
+		log("advance_live_session_to_pre_game_lobby()")
 		self.advance_live_session_state("pre_game_lobby")
 
 	def advance_live_session_to_in_game(self):
-		print("transitioning session state to in game")
+		log("advance_live_session_to_in_game()")
 		self.advance_live_session_state("in_game")
 
 	def advance_live_session_state(self, state):
 		json = {"admin_auth_key" : self.admin_auth_key, "request" : "transition_state", "state" : state};
+		full_url = "%s/%s" % (self.api_url, "liveAdmin")
+		
+		requests.get(full_url, json)
+
+	def advance_live_session_round(self):
+		log("advance_live_session_round()")
+
+		json = {"admin_auth_key" : self.admin_auth_key, "request" : "advance_round"};
 		full_url = "%s/%s" % (self.api_url, "liveAdmin")
 		
 		requests.get(full_url, json)
@@ -181,8 +193,25 @@ class CosmosLiveSessionManager:
 		pre_game_lobby_seconds = self.database_connector.get_live_mode_pre_game_lobby_length()
 		return start_date_time - timedelta(seconds = pre_game_lobby_seconds)
 
+	def handle_live_session_in_game(self, session):
+		round_seconds_remaining = int(session["round_seconds_remaining"])
+		if round_seconds_remaining > 0:
+			return
+
+		#if no players remain - advance to post game lobby
+
+		self.rest_api_connector.advance_live_session_round()
+
+
+
+
+
+
 	def handle_live_session(self, session):
 		session_state = session["state"]
+
+		if (session_state == "IN_GAME"):
+			self.handle_live_session_in_game(session)
 
 		destination_state = self.get_appropriate_state(session)
 		if destination_state == session_state:
@@ -195,17 +224,14 @@ class CosmosLiveSessionManager:
 		elif destination_state == "IN_GAME":
 			self.rest_api_connector.advance_live_session_to_in_game()
 
-
-	def clean_date(self, date):
-		return date.replace("T", " ")[:date.rindex(".")]
-
 	def get_date(self, date):
-		date = str(date)
-		str_date = self.clean_date(date)
-
+		str_date = self.clean_date(str(date))
 		datetime_object = datetime.strptime(str_date, '%Y-%m-%d %H:%M:%S')
 
 		return datetime_object
+
+	def clean_date(self, date):
+		return date.replace("T", " ")[:date.rindex(".")]
 
 
 def get_database_connection_info(environment):
@@ -256,7 +282,7 @@ def main(environment):
 
 if __name__ == "__main__":
 	if (len(sys.argv) != 2):
-		print("error: must specify environment.")
+		log("error: must specify environment.")
 		exit(1)
 
 	try:
