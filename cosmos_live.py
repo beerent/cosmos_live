@@ -243,7 +243,7 @@ class CosmosLiveSessionManager:
 		session_round = session["round"]
 		session_players = session["player_count"];
 
-		return session_round > 1 and session_players == 0
+		return session_players == 0
 
 	def get_date(self, date):
 		str_date = self.clean_date(str(date))
