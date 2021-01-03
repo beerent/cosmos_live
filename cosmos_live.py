@@ -153,6 +153,10 @@ class RestApiConnector:
 		log("advance_live_session_to_in_game()")
 		self.advance_live_session_state("in_game")
 
+	def advance_live_session_to_post_game_lobby(self):
+		log("advance_live_session_to_post_game_lobby()")
+		self.advance_live_session_state("post_game_lobby")
+
 	def advance_live_session_state(self, state):
 		json = {"admin_auth_key" : self.admin_auth_key, "request" : "transition_state", "state" : state};
 		full_url = "%s/%s" % (self.api_url, "liveAdmin")
@@ -186,6 +190,9 @@ class CosmosLiveSessionManager:
 			time.sleep(1)
 
 	def get_appropriate_state(self, session):
+		if self.session_has_ended(session):
+			return "POST_GAME_LOBBY"
+
 		start_date_time = self.get_date(session["start"])
 		pre_game_lobby_date_time = self.get_pre_game_lobby_date_time(start_date_time)
 		now_date_time = self.get_date(datetime.utcnow())
@@ -208,12 +215,13 @@ class CosmosLiveSessionManager:
 		if round_seconds_remaining > 0:
 			return
 
-		#if no players remain - advance to post game lobby
-
 		self.rest_api_connector.advance_live_session_round()
 
 	def handle_live_session(self, session):
 		session_state = session["state"]
+
+		if (session == "POST_GAME_LOBBY"):
+			return
 
 		if (session_state == "IN_GAME"):
 			self.handle_live_session_in_game(session)
@@ -228,6 +236,14 @@ class CosmosLiveSessionManager:
 			self.rest_api_connector.advance_live_session_to_pre_game_lobby()
 		elif destination_state == "IN_GAME":
 			self.rest_api_connector.advance_live_session_to_in_game()
+		elif destination_state == "POST_GAME_LOBBY":
+			self.rest_api_connector.advance_live_session_to_post_game_lobby()
+
+	def session_has_ended(self, session):
+		session_round = session["round"]
+		session_players = session["player_count"];
+
+		return session_round > 1 and session_players == 0
 
 	def get_date(self, date):
 		str_date = self.clean_date(str(date))
