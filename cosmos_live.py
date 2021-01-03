@@ -7,7 +7,8 @@ import json
 import sys
 
 def log(message):
-	ct = datetime.now()
+	ct = str(datetime.now())
+	ct = ct[:ct.rindex(".")]
 	print("[%s] %s" % (ct, message))
 
 class ConfigReader:
@@ -130,9 +131,15 @@ class RestApiConnector:
 	def get_cosmos_live_session(self):
 		json = {"admin_auth_key" : self.admin_auth_key};
 		full_url = "%s/%s" % (self.api_url, "live")
-		response = requests.get(full_url, json)
 
-		return response.json()
+		response_json = None
+		try:
+			response = requests.get(full_url, json)
+			response_json = response.json()
+		except requests.exceptions.ConnectionError:
+			pass
+
+		return response_json
 
 	def advance_live_session_to_closed(self):
 		log("advance_live_session_to_closed()")
@@ -171,7 +178,10 @@ class CosmosLiveSessionManager:
 	def run(self):
 		while True:
 			live_session = self.rest_api_connector.get_cosmos_live_session()
-			self.handle_live_session(live_session["payload"]["cosmos_live_session"])
+			if live_session is None:
+				log("ERROR: failed to reach api.")
+			else:
+				self.handle_live_session(live_session["payload"]["cosmos_live_session"])
 
 			time.sleep(1)
 
@@ -201,11 +211,6 @@ class CosmosLiveSessionManager:
 		#if no players remain - advance to post game lobby
 
 		self.rest_api_connector.advance_live_session_round()
-
-
-
-
-
 
 	def handle_live_session(self, session):
 		session_state = session["state"]
