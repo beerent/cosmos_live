@@ -220,14 +220,14 @@ class CosmosLiveSessionManager:
 	def handle_live_session(self, session):
 		session_state = session["state"]
 
-		if (session == "POST_GAME_LOBBY"):
+		if (session_state == "POST_GAME_LOBBY"):
 			return
 
-		if (session_state == "IN_GAME"):
-			self.handle_live_session_in_game(session)
-
 		destination_state = self.get_appropriate_state(session)
+
 		if destination_state == session_state:
+			if session_state == "IN_GAME":
+				self.handle_live_session_in_game(session)
 			return
 
 		if destination_state == "CLOSED":
